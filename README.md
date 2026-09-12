@@ -39,11 +39,11 @@ npm test
 A sample chat you can paste into a `.txt` file to try the app:
 
 ```text
-10/09/2019, 15:54 - 🧚Cindy🐰: 🙄
-10/09/2019, 16:04 - Deshan: Koheda inne
-10/09/2019, 16:04 - 🧚Cindy🐰: Gedara yanawa me
-10/09/2019, 16:04 - 🧚Cindy🐰: Oya
-10/09/2019, 16:04 - Deshan: Koi hariyeda
+10/09/2019, 15:54 - Emma: Hi
+10/09/2019, 16:04 - Harry: Where are you?
+10/09/2019, 16:04 - Emma: I'm heading to home
+10/09/2019, 16:04 - Emma: Where're you now?
+10/09/2019, 16:04 - Harry: On the train
 ```
 
 ## How it works
