@@ -35,7 +35,7 @@ import { parseWhatsAppChat } from './parser/whatsappParser';
 import type { ParserWorkerResponse } from './parser/parser.worker';
 import type { ChatMessage, ChatPageGroup, GeneratedPage } from './types/chat';
 import type { Participant } from './types/participant';
-import type { ChatSettings, SettingsPreset } from './types/settings';
+import type { ChatSettings, PdfSettings, SettingsPreset } from './types/settings';
 import {
   DEFAULT_SETTINGS,
   SETTINGS_PRESETS,
@@ -92,7 +92,7 @@ export default function App() {
   // PDF settings describe the export container (paper size, margins), not
   // the chat's own visual config, so they're tracked separately from
   // ChatSettings.
-  const [pdfSettings, setPdfSettings] = useState({
+  const [pdfSettings, setPdfSettings] = useState<PdfSettings>({
     pageSize: 'image' as const,
     orientation: 'portrait' as const,
     marginPx: 0,
@@ -144,12 +144,13 @@ export default function App() {
     let worker: Worker | null = null;
 
     try {
-      worker = new Worker(new URL('./parser/parser.worker.ts', import.meta.url), {
+      const activeWorker = new Worker(new URL('./parser/parser.worker.ts', import.meta.url), {
         type: 'module',
       });
+      worker = activeWorker;
 
       const result = await new Promise<ReturnType<typeof parseWhatsAppChat>>((resolve, reject) => {
-        worker.onmessage = (event: MessageEvent<ParserWorkerResponse>) => {
+        activeWorker.onmessage = (event: MessageEvent<ParserWorkerResponse>) => {
           const msg = event.data;
           if (msg.type === 'progress') {
             setParseProgress(msg.total > 0 ? Math.min(99, Math.round((msg.processed / msg.total) * 100)) : null);
@@ -159,8 +160,8 @@ export default function App() {
             reject(new Error(msg.message));
           }
         };
-        worker.onerror = (event) => reject(new Error(event.message || 'Failed to parse the file.'));
-        worker.postMessage({ file });
+        activeWorker.onerror = (event) => reject(new Error(event.message || 'Failed to parse the file.'));
+        activeWorker.postMessage({ file });
       });
 
       if (result.messages.length === 0) {

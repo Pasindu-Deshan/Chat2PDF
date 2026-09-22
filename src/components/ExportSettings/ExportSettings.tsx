@@ -9,6 +9,7 @@ import {
   Radio,
   RadioGroup,
   Select,
+  Slider,
   Stack,
   TextField,
   Typography,
