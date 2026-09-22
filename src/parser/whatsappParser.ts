@@ -100,21 +100,38 @@ function nextId(): string {
   return `msg-${idCounter}-${Date.now().toString(36)}`;
 }
 
-export function parseWhatsAppChat(rawText: string): ParseResult {
+export type ParseProgressCallback = (processedLines: number, totalLines: number) => void;
+
+export function parseWhatsAppChat(
+  rawText: string,
+  onProgress?: ParseProgressCallback
+): ParseResult {
   idCounter = 0;
 
   // Normalize line endings and strip a possible BOM.
   const text = rawText.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = text.split('\n');
+  const totalLines = lines.length;
 
   const messages: ChatMessage[] = [];
   const warnings: ParseWarning[] = [];
   const participantSet = new Set<string>();
 
   let current: ChatMessage | null = null;
+  let nonBlankInputLines = 0;
 
-  lines.forEach((originalLine, index) => {
+  // A progress callback is only useful when this runs somewhere that can
+  // actually report it back (e.g. a Web Worker); we throttle it so it
+  // doesn't itself become overhead on very large files.
+  const progressEvery = Math.max(2000, Math.floor(totalLines / 200));
+
+  for (let index = 0; index < totalLines; index += 1) {
+    const originalLine = lines[index];
     const line = stripInvisible(originalLine);
+
+    if (onProgress && index % progressEvery === 0) {
+      onProgress(index, totalLines);
+    }
 
     if (line.trim() === '') {
       // Blank lines within a multiline message are preserved as part of
@@ -122,8 +139,10 @@ export function parseWhatsAppChat(rawText: string): ParseResult {
       if (current) {
         current.text += '\n';
       }
-      return;
+      continue;
     }
+
+    nonBlankInputLines += 1;
 
     const header = matchHeader(line);
 
@@ -143,7 +162,7 @@ export function parseWhatsAppChat(rawText: string): ParseResult {
             reason: 'Line looked like a message header but the date or time could not be parsed.',
           });
         }
-        return;
+        continue;
       }
 
       const split = splitSenderAndMessage(header.rest);
@@ -177,7 +196,7 @@ export function parseWhatsAppChat(rawText: string): ParseResult {
       }
 
       messages.push(current);
-      return;
+      continue;
     }
 
     // Not a header line: it's a continuation of the previous message, or,
@@ -191,18 +210,24 @@ export function parseWhatsAppChat(rawText: string): ParseResult {
         reason: "Line did not match the WhatsApp export header format and appeared before any message.",
       });
     }
-  });
+  }
+
+  onProgress?.(totalLines, totalLines);
 
   // Trim trailing newlines accumulated from blank-line handling.
   for (const m of messages) {
     m.text = m.text.replace(/\n+$/, '');
   }
 
-  const dates = messages.map((m) => m.date).sort();
-  const firstDate = dates.length > 0 ? dates[0] : null;
-  const lastDate = dates.length > 0 ? dates[dates.length - 1] : null;
-
-  const nonBlankInputLines = lines.filter((l) => l.trim() !== '').length;
+  // Messages are produced in file order, which is already date-ascending
+  // for well-formed exports; sorting a copy of just the two dates we need
+  // is far cheaper than sorting/filtering the full array again.
+  let firstDate: string | null = null;
+  let lastDate: string | null = null;
+  for (const m of messages) {
+    if (firstDate === null || m.date < firstDate) firstDate = m.date;
+    if (lastDate === null || m.date > lastDate) lastDate = m.date;
+  }
 
   return {
     messages,

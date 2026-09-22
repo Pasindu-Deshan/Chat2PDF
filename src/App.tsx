@@ -32,6 +32,7 @@ import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
 
 import { getAppTheme } from './theme';
 import { parseWhatsAppChat } from './parser/whatsappParser';
+import type { ParserWorkerResponse } from './parser/parser.worker';
 import type { ChatMessage, ChatPageGroup, GeneratedPage } from './types/chat';
 import type { Participant } from './types/participant';
 import type { ChatSettings, SettingsPreset } from './types/settings';
@@ -43,10 +44,10 @@ import {
 } from './state/settingsState';
 import { defaultColorForIndex } from './utils/colorUtils';
 import { autoTextColor } from './utils/contrastUtils';
-import { readFileAsText, downloadDataUrl, downloadBlob } from './utils/fileUtils';
+import { downloadDataUrl, downloadBlob } from './utils/fileUtils';
 import { slugifyFilename } from './utils/formatUtils';
 import { buildDateGroups } from './utils/splitUtils';
-import { paginateGroupByHeight, renderPageToDataUrl } from './pdf/imageGenerator';
+import { paginateGroupByHeight, renderPageToDataUrl, mapWithConcurrency } from './pdf/imageGenerator';
 import { buildPdf } from './pdf/pdfGenerator';
 
 import { FileUploader } from './components/FileUploader/FileUploader';
@@ -113,6 +114,7 @@ export default function App() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [parseProgress, setParseProgress] = useState<number | null>(null);
 
   const [generatedPages, setGeneratedPages] = useState<GeneratedPage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -130,17 +132,44 @@ export default function App() {
   const handleFileSelected = useCallback(async (file: File) => {
     setIsParsing(true);
     setParseError(null);
+    setParseProgress(0);
     setGeneratedPages([]);
+
+    // Large exports (tens of MB, hundreds of thousands of lines) take real
+    // CPU time to parse. Running that on the main thread is what causes the
+    // browser's "page unresponsive" warning, so we hand the whole file
+    // straight to a Web Worker (as a File — the worker reads its bytes
+    // itself, so we never copy 30MB of text between threads) and keep the
+    // UI interactive and reporting progress while it works.
+    let worker: Worker | null = null;
+
     try {
-      const text = await readFileAsText(file);
-      const result = parseWhatsAppChat(text);
+      worker = new Worker(new URL('./parser/parser.worker.ts', import.meta.url), {
+        type: 'module',
+      });
+
+      const result = await new Promise<ReturnType<typeof parseWhatsAppChat>>((resolve, reject) => {
+        worker.onmessage = (event: MessageEvent<ParserWorkerResponse>) => {
+          const msg = event.data;
+          if (msg.type === 'progress') {
+            setParseProgress(msg.total > 0 ? Math.min(99, Math.round((msg.processed / msg.total) * 100)) : null);
+          } else if (msg.type === 'done') {
+            resolve(msg.result);
+          } else if (msg.type === 'error') {
+            reject(new Error(msg.message));
+          }
+        };
+        worker.onerror = (event) => reject(new Error(event.message || 'Failed to parse the file.'));
+        worker.postMessage({ file });
+      });
+
       if (result.messages.length === 0) {
         setParseError(
           "We couldn't find any WhatsApp-style messages in this file. Please make sure you uploaded a WhatsApp chat export (.txt)."
         );
-        setIsParsing(false);
         return;
       }
+
       setFileMeta({ name: file.name, size: file.size });
       setParseResult(result);
       const newParticipants = buildParticipants(result);
@@ -156,11 +185,16 @@ export default function App() {
         );
       }
     } catch (err) {
-      setParseError('Something went wrong reading this file. Please try again with a valid .txt export.');
+      setParseError(
+        err instanceof Error
+          ? err.message
+          : 'Something went wrong reading this file. Please try again with a valid .txt export.'
+      );
     } finally {
       setIsParsing(false);
+      setParseProgress(null);
+      worker?.terminate();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const updateParticipant = useCallback((id: string, patch: Partial<Participant>) => {
@@ -183,12 +217,14 @@ export default function App() {
     setGeneratedPages([]);
 
     try {
-      const allPaginated: ChatPageGroup[] = [];
-      for (const group of dateGroups) {
-        // eslint-disable-next-line no-await-in-loop
-        const paginated = await paginateGroupByHeight(group, participants, settings);
-        allPaginated.push(...paginated);
-      }
+      // Pagination for every date-group is independent, so this is safe to
+      // run concurrently too — the DOM measurement work is the same cost
+      // per group either way, but not serializing it end-to-end matters
+      // once there are dozens of groups (e.g. "every day" over a year).
+      const paginatedGroups = await mapWithConcurrency(dateGroups, 3, (group) =>
+        paginateGroupByHeight(group, participants, settings)
+      );
+      const allPaginated: ChatPageGroup[] = paginatedGroups.flat();
 
       const initialPages: GeneratedPage[] = allPaginated.map((group) => ({
         id: group.id,
@@ -198,25 +234,34 @@ export default function App() {
       }));
       setGeneratedPages(initialPages);
 
-      for (let i = 0; i < allPaginated.length; i += 1) {
-        const group = allPaginated[i];
+      // Rendering each page is independent, layout/canvas-heavy work, so a
+      // small amount of concurrency speeds up multi-page exports
+      // meaningfully without the memory spike of rendering everything at
+      // once. 3 in flight is a reasonable default across devices.
+      await mapWithConcurrency(allPaginated, 3, async (group) => {
         setGeneratedPages((prev) =>
           prev.map((p) => (p.id === group.id ? { ...p, status: 'rendering' } : p))
         );
         try {
-          // eslint-disable-next-line no-await-in-loop
-          const dataUrl = await renderPageToDataUrl(group, participants, settings);
-          setGeneratedPages((prev) =>
-            prev.map((p) => (p.id === group.id ? { ...p, status: 'done', dataUrl } : p))
+          const { dataUrl, pixelWidth, pixelHeight } = await renderPageToDataUrl(
+            group,
+            participants,
+            settings
           );
-        } catch (err) {
+          setGeneratedPages((prev) =>
+            prev.map((p) =>
+              p.id === group.id ? { ...p, status: 'done', dataUrl, pixelWidth, pixelHeight } : p
+            )
+          );
+        } catch {
           setGeneratedPages((prev) =>
             prev.map((p) =>
               p.id === group.id ? { ...p, status: 'error', error: 'Rendering failed' } : p
             )
           );
         }
-      }
+      });
+
       setToast(`Generated ${allPaginated.length} page(s).`);
       if (isMobile) setTab('export');
     } finally {
@@ -230,9 +275,13 @@ export default function App() {
       if (!target) return;
       setGeneratedPages((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'rendering' } : p)));
       try {
-        const dataUrl = await renderPageToDataUrl(target.group, participants, settings);
+        const { dataUrl, pixelWidth, pixelHeight } = await renderPageToDataUrl(
+          target.group,
+          participants,
+          settings
+        );
         setGeneratedPages((prev) =>
-          prev.map((p) => (p.id === id ? { ...p, status: 'done', dataUrl } : p))
+          prev.map((p) => (p.id === id ? { ...p, status: 'done', dataUrl, pixelWidth, pixelHeight } : p))
         );
       } catch {
         setGeneratedPages((prev) =>
@@ -321,6 +370,7 @@ export default function App() {
               <FileUploader
                 onFileSelected={handleFileSelected}
                 isParsing={isParsing}
+                progress={parseProgress}
                 error={parseError}
                 currentFileName={fileMeta?.name}
                 currentFileSize={fileMeta?.size}

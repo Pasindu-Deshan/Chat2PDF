@@ -57,6 +57,10 @@ export interface GeneratedPage {
   id: string;
   group: ChatPageGroup;
   dataUrl: string | null;
+  /** Actual captured pixel dimensions, recorded at render time so the PDF
+   * step never has to reload/decode the image again just to measure it. */
+  pixelWidth?: number;
+  pixelHeight?: number;
   status: 'pending' | 'rendering' | 'done' | 'error';
   error?: string;
 }

@@ -99,7 +99,7 @@ export const ChatPreview = forwardRef<HTMLDivElement, ChatPreviewProps>(function
             pointerEvents: 'none',
           }}
         />
-        <Box sx={{ position: 'relative', py: 1.5 }}>
+        <Box data-role="message-area" sx={{ position: 'relative', py: 1.5 }}>
           {messages.length === 0 && (
             <Box sx={{ textAlign: 'center', color: '#8b978f', pt: 6, fontSize: 13 }}>
               No messages in this range
@@ -120,7 +120,7 @@ export const ChatPreview = forwardRef<HTMLDivElement, ChatPreviewProps>(function
 
             if (message.type === 'system') {
               return (
-                <Box key={message.id}>
+                <Box key={message.id} data-message-id={message.id}>
                   {showDateSep && dateLabel && <DateSeparator label={dateLabel} variant="date" />}
                   <DateSeparator label={message.text} variant="system" />
                 </Box>
@@ -132,7 +132,7 @@ export const ChatPreview = forwardRef<HTMLDivElement, ChatPreviewProps>(function
               participant && participant.id === settings.rightSideParticipantId ? 'right' : 'left';
 
             return (
-              <Box key={message.id}>
+              <Box key={message.id} data-message-id={message.id}>
                 {showDateSep && dateLabel && <DateSeparator label={dateLabel} variant="date" />}
                 <ChatBubble
                   message={message}

@@ -64,6 +64,12 @@ export interface OutputSettings {
   maxHeight: number;
   fitMode: 'fit-all' | 'auto-split';
   pixelRatio: number;
+  /** JPEG captures noticeably faster and produces much smaller files than
+   * PNG for photo-free chat screenshots, at a small, usually imperceptible
+   * quality cost — it's the default for that reason. PNG stays available
+   * for lossless output. */
+  format: 'jpeg' | 'png';
+  jpegQuality: number; // 0-1
 }
 
 export interface SplitSettings {

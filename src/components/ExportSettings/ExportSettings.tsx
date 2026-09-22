@@ -158,6 +158,56 @@ export function ExportSettings({
 
       <Box>
         <Typography variant="subtitle2" sx={{ mb: 1 }}>
+          Image quality &amp; speed
+        </Typography>
+        <RadioGroup
+          row
+          value={output.format}
+          onChange={(e) => onOutputChange({ format: e.target.value as 'jpeg' | 'png' })}
+          sx={{ mb: 1 }}
+        >
+          <FormControlLabel value="jpeg" control={<Radio size="small" />} label="JPEG (faster, smaller)" />
+          <FormControlLabel value="png" control={<Radio size="small" />} label="PNG (lossless, slower)" />
+        </RadioGroup>
+
+        {output.format === 'jpeg' && (
+          <Box sx={{ mb: 1.5 }}>
+            <Typography variant="caption" color="text.secondary">
+              JPEG quality ({Math.round(output.jpegQuality * 100)}%)
+            </Typography>
+            <Slider
+              size="small"
+              min={0.6}
+              max={1}
+              step={0.02}
+              value={output.jpegQuality}
+              onChange={(_, v) => onOutputChange({ jpegQuality: v as number })}
+            />
+          </Box>
+        )}
+
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel id="pixel-ratio-label">Resolution</InputLabel>
+          <Select
+            labelId="pixel-ratio-label"
+            label="Resolution"
+            value={output.pixelRatio}
+            onChange={(e) => onOutputChange({ pixelRatio: Number(e.target.value) })}
+          >
+            <MenuItem value={1}>1x (fastest, screen quality)</MenuItem>
+            <MenuItem value={1.5}>1.5x</MenuItem>
+            <MenuItem value={2}>2x (recommended, sharp on retina)</MenuItem>
+            <MenuItem value={3}>3x (print quality, slowest)</MenuItem>
+          </Select>
+        </FormControl>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+          Lower resolution and JPEG both speed up generation noticeably — useful for very long
+          chats or quick previews.
+        </Typography>
+      </Box>
+
+      <Box>
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>
           PDF settings
         </Typography>
         <FormControl size="small" fullWidth sx={{ mb: 1.5 }}>

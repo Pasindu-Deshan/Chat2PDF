@@ -11,6 +11,8 @@ interface FileUploaderProps {
   error: string | null;
   currentFileName?: string | null;
   currentFileSize?: number | null;
+  /** 0-100 when known, null for an indeterminate spinner. */
+  progress?: number | null;
 }
 
 export function FileUploader({
@@ -19,6 +21,7 @@ export function FileUploader({
   error,
   currentFileName,
   currentFileSize,
+  progress = null,
 }: FileUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -107,9 +110,12 @@ export function FileUploader({
 
         {isParsing && (
           <Box sx={{ width: '100%', maxWidth: 320, mt: 1 }}>
-            <LinearProgress />
+            <LinearProgress
+              variant={progress !== null ? 'determinate' : 'indeterminate'}
+              value={progress ?? undefined}
+            />
             <Typography variant="caption" color="text.secondary">
-              Parsing your chat…
+              {progress !== null ? `Parsing your chat… ${progress}%` : 'Parsing your chat…'}
             </Typography>
           </Box>
         )}

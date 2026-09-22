@@ -44,6 +44,8 @@ export const DEFAULT_SETTINGS: ChatSettings = {
     maxHeight: 1920,
     fitMode: 'auto-split',
     pixelRatio: 2,
+    format: 'jpeg',
+    jpegQuality: 0.92,
   },
   split: {
     mode: 'none',

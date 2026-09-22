@@ -85,6 +85,20 @@ src/
 └── main.tsx             # Entry point
 ```
 
+## Performance
+
+Two things were tuned specifically for large chats and fast exports:
+
+1. **Parsing runs in a Web Worker** (`src/parser/parser.worker.ts`), not the main thread. A 30MB export is hundreds of thousands of lines, and running that parse loop synchronously on the UI thread is exactly what triggers the browser's "page unresponsive" warning. The worker receives the `File` directly (so the 30MB of text is never copied between threads — the worker reads its own bytes), parses it, and reports progress back so the upload screen can show a real percentage instead of freezing.
+2. **Image/PDF generation avoids redundant work**:
+   - Height-based pagination measures every message's position in a **single** off-screen render per date-group, rather than repeatedly mounting candidate slices to binary-search for a page break. For a group that splits into, say, 5 pages, that's 1 mount instead of dozens.
+   - Multiple pages render **concurrently** (a small worker pool, not one-at-a-time), which noticeably speeds up multi-page exports.
+   - Each rendered page records its own pixel dimensions at capture time, so building the final PDF never has to reload and re-decode every image just to read its width/height.
+   - Capture format defaults to **JPEG** (configurable, with a quality slider) instead of PNG — chat screenshots are mostly solid colors and text, so JPEG encodes/decodes markedly faster and produces smaller files at a quality cost that's usually imperceptible. Lossless PNG stays available in Export settings.
+   - Resolution (pixel ratio) is also configurable from Export settings — dropping to 1x or 1.5x is the single biggest lever if you want faster turnaround on a very long chat and don't need print-grade sharpness.
+
+If you're still working with genuinely enormous chats (multi-hundred-thousand messages), the remaining cost is inherent: every page still has to go through a real browser layout + canvas capture, and that's fundamentally proportional to how many pages you're generating. Splitting into smaller date ranges via "Custom date range" before generating is the most effective way to keep any single generation run fast.
+
 ## Notes & known trade-offs
 
 - **Built-in backgrounds** are generated with plain CSS gradients rather than shipping any WhatsApp-owned artwork, so the app has zero external/binary asset dependencies.

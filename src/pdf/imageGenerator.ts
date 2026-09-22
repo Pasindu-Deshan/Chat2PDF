@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { toPng } from 'html-to-image';
+import { toPng, toJpeg } from 'html-to-image';
 import type { ChatMessage, ChatPageGroup } from '../types/chat';
 import type { ChatSettings } from '../types/settings';
 import type { Participant } from '../types/participant';
@@ -96,11 +96,27 @@ async function waitForFontsAndImages(container: HTMLElement): Promise<void> {
   );
 }
 
+// A small safety margin subtracted from the available message-area height
+// per page, so rounding/subpixel layout differences between the measuring
+// pass and the final capture never push a page a pixel or two over budget.
+const HEIGHT_SAFETY_MARGIN_PX = 12;
+
 /**
  * Splits a single date-group's messages into as many sub-pages as needed so
  * that each rendered page's height stays within `settings.output.maxHeight`.
- * Never splits inside a message bubble: it measures cumulative height and
- * always breaks between two whole messages.
+ * Never splits inside a message bubble: it always breaks between two whole
+ * messages.
+ *
+ * Performance note: this mounts the ENTIRE group exactly once — regardless
+ * of how many resulting pages it produces — and reads every message row's
+ * position out of that single layout pass, rather than repeatedly
+ * mounting/measuring candidate slices (which is what an earlier version of
+ * this function did via a binary search; for a group that needed, say, 5
+ * sub-pages that meant dozens of full React mounts just to work out where
+ * to cut). One mount + one batch of reads is enough because message rows
+ * stack vertically and don't affect each other's height, so their absolute
+ * positions from a single full render already tell us exactly where every
+ * possible cut point is.
  */
 export async function paginateGroupByHeight(
   group: ChatPageGroup,
@@ -113,37 +129,41 @@ export async function paginateGroupByHeight(
 
   const width = settings.output.width;
   const maxHeight = settings.output.maxHeight;
+  const headerHeight = settings.header.show ? settings.header.height : 0;
+  const availableHeight = Math.max(80, maxHeight - headerHeight - HEIGHT_SAFETY_MARGIN_PX);
 
-  const pages: ChatMessage[][] = [];
-  let remaining = group.messages;
+  const { host, root, element } = await mountPreview(group.messages, participants, settings, width);
 
-  while (remaining.length > 0) {
-    const fullHeight = await measureHeight(remaining, participants, settings, width);
-    if (fullHeight <= maxHeight) {
-      pages.push(remaining);
-      break;
-    }
+  let breaks: number[];
+  try {
+    await waitForFontsAndImages(element);
 
-    // Binary search the largest prefix of `remaining` that still fits.
-    let lo = 1;
-    let hi = remaining.length;
-    let best = 1;
-    while (lo <= hi) {
-      const mid = Math.floor((lo + hi) / 2);
-      const slice = remaining.slice(0, mid);
-      // eslint-disable-next-line no-await-in-loop
-      const height = await measureHeight(slice, participants, settings, width);
-      if (height <= maxHeight) {
-        best = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
+    const rows = Array.from(element.querySelectorAll<HTMLElement>('[data-message-id]'));
+
+    if (rows.length !== group.messages.length) {
+      // Shouldn't happen, but fail safe to "everything on one page" rather
+      // than silently mis-paginating if the DOM shape ever changes.
+      breaks = [0];
+    } else {
+      breaks = [0];
+      let pageStartTop = rows[0].offsetTop;
+
+      for (let i = 1; i < rows.length; i += 1) {
+        const bottom = rows[i].offsetTop + rows[i].offsetHeight;
+        if (bottom - pageStartTop > availableHeight) {
+          breaks.push(i);
+          pageStartTop = rows[i].offsetTop;
+        }
       }
     }
-
-    pages.push(remaining.slice(0, best));
-    remaining = remaining.slice(best);
+  } finally {
+    destroyOffscreenHost(host, root);
   }
+
+  const pages: ChatMessage[][] = breaks.map((start, i) => {
+    const end = i + 1 < breaks.length ? breaks[i + 1] : group.messages.length;
+    return group.messages.slice(start, end);
+  });
 
   return pages.map((msgs, i) => ({
     ...group,
@@ -154,38 +174,76 @@ export async function paginateGroupByHeight(
   }));
 }
 
-async function measureHeight(
-  messages: ChatMessage[],
-  participants: Participant[],
-  settings: ChatSettings,
-  width: number
-): Promise<number> {
-  const { host, root, element } = await mountPreview(messages, participants, settings, width);
-  const height = element.scrollHeight;
-  destroyOffscreenHost(host, root);
-  return height;
+export interface RenderedPage {
+  dataUrl: string;
+  pixelWidth: number;
+  pixelHeight: number;
 }
 
-/** Renders one already-paginated group to a high-resolution PNG data URL. */
+/** Renders one already-paginated group to a high-resolution image data URL. */
 export async function renderPageToDataUrl(
   group: ChatPageGroup,
   participants: Participant[],
   settings: ChatSettings
-): Promise<string> {
+): Promise<RenderedPage> {
   const width = settings.output.width;
   const { host, root, element } = await mountPreview(group.messages, participants, settings, width);
 
   try {
     await waitForFontsAndImages(element);
-    const dataUrl = await toPng(element, {
-      width,
-      height: element.scrollHeight,
-      pixelRatio: settings.output.pixelRatio,
-      backgroundColor: '#FFFFFF',
-      cacheBust: true,
-    });
-    return dataUrl;
+    const height = element.scrollHeight;
+    const capture =
+      settings.output.format === 'jpeg'
+        ? toJpeg(element, {
+            width,
+            height,
+            pixelRatio: settings.output.pixelRatio,
+            backgroundColor: '#FFFFFF',
+            quality: settings.output.jpegQuality,
+            cacheBust: true,
+          })
+        : toPng(element, {
+            width,
+            height,
+            pixelRatio: settings.output.pixelRatio,
+            backgroundColor: '#FFFFFF',
+            cacheBust: true,
+          });
+    const dataUrl = await capture;
+    return {
+      dataUrl,
+      pixelWidth: Math.round(width * settings.output.pixelRatio),
+      pixelHeight: Math.round(height * settings.output.pixelRatio),
+    };
   } finally {
     destroyOffscreenHost(host, root);
   }
+}
+
+/**
+ * Runs `fn` over `items` with at most `limit` in flight at once. Rendering
+ * pages is layout/canvas-heavy and independent per page, so a small amount
+ * of concurrency (rather than one-at-a-time) meaningfully speeds up
+ * multi-page exports without spiking memory the way rendering everything
+ * at once would.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await fn(items[index], index);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
 }

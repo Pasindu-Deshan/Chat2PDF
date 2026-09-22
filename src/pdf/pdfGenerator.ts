@@ -18,12 +18,24 @@ function loadImageSize(dataUrl: string): Promise<{ width: number; height: number
   });
 }
 
+function imageFormatOf(dataUrl: string): 'PNG' | 'JPEG' {
+  return dataUrl.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+}
+
 /**
  * Builds a single PDF from the completed generated pages, in order, and
  * returns it as a Blob. Each page's image is drawn at its own size (when
  * `pageSize: "image"`) so nothing is distorted or cropped; for fixed paper
  * sizes the image is scaled down to fit within the margins while
  * preserving its aspect ratio.
+ *
+ * Performance note: each generated page already recorded its own pixel
+ * dimensions at capture time (see `renderPageToDataUrl`). When that's
+ * available we use it directly instead of reloading/decoding every image a
+ * second time through an `<img>` element just to read its width/height —
+ * for a many-page export those decodes were a meaningful chunk of the "PDF
+ * generation" wait. The reload path is kept as a fallback only for pages
+ * that somehow don't have recorded dimensions.
  */
 export async function buildPdf(
   pages: GeneratedPage[],
@@ -34,13 +46,21 @@ export async function buildPdf(
     throw new Error('No generated pages are ready to export yet.');
   }
 
+  const sizes = await Promise.all(
+    done.map((page) =>
+      page.pixelWidth && page.pixelHeight
+        ? Promise.resolve({ width: page.pixelWidth, height: page.pixelHeight })
+        : loadImageSize(page.dataUrl as string)
+    )
+  );
+
   let doc: jsPDF | null = null;
   const marginMm = settings.marginPx * MM_PER_PX_AT_96DPI;
 
   for (let i = 0; i < done.length; i += 1) {
     const page = done[i];
     const dataUrl = page.dataUrl as string;
-    const { width: pxWidth, height: pxHeight } = await loadImageSize(dataUrl);
+    const { width: pxWidth, height: pxHeight } = sizes[i];
 
     const imgWidthMm = pxWidth * MM_PER_PX_AT_96DPI;
     const imgHeightMm = pxHeight * MM_PER_PX_AT_96DPI;
@@ -85,7 +105,16 @@ export async function buildPdf(
     const offsetX = (pageWidthMm - drawWidthMm) / 2;
     const offsetY = (pageHeightMm - drawHeightMm) / 2;
 
-    doc.addImage(dataUrl, 'PNG', offsetX, offsetY, drawWidthMm, drawHeightMm, `page-${i}`, 'FAST');
+    doc.addImage(
+      dataUrl,
+      imageFormatOf(dataUrl),
+      offsetX,
+      offsetY,
+      drawWidthMm,
+      drawHeightMm,
+      `page-${i}`,
+      'FAST'
+    );
   }
 
   return doc!.output('blob');
