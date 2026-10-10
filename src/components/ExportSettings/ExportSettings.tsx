@@ -29,10 +29,12 @@ interface ExportSettingsProps {
   minDate: string | null;
   maxDate: string | null;
   isGenerating: boolean;
+  isGeneratingFullPdf: boolean;
   onSplitChange: (patch: Partial<ChatSettings['split']>) => void;
   onOutputChange: (patch: Partial<ChatSettings['output']>) => void;
   onPdfChange: (patch: Partial<PdfSettings>) => void;
   onGenerateImages: () => void;
+  onGenerateFullPdf: () => void;
   onSelectBatch: (index: number) => void;
 }
 
@@ -56,10 +58,12 @@ export function ExportSettings({
   minDate,
   maxDate,
   isGenerating,
+  isGeneratingFullPdf,
   onSplitChange,
   onOutputChange,
   onPdfChange,
   onGenerateImages,
+  onGenerateFullPdf,
   onSelectBatch,
 }: ExportSettingsProps) {
   return (
@@ -303,9 +307,18 @@ export function ExportSettings({
       >
         {isGenerating ? 'Generating…' : `Generate batch ${batches.length ? selectedBatch + 1 : ''}`}
       </Button>
+      <Button
+        variant="outlined"
+        size="large"
+        startIcon={<PictureAsPdfRoundedIcon />}
+        onClick={onGenerateFullPdf}
+        disabled={isGenerating || isGeneratingFullPdf || messageCount === 0}
+      >
+        Generate complete PDF
+      </Button>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
         <PictureAsPdfRoundedIcon fontSize="inherit" />
-        Once your pages are generated, you can export them all as a single PDF below.
+        Generate a single PDF directly, or create and manage screenshot batches above.
       </Typography>
     </Stack>
   );

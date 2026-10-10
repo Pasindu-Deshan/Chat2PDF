@@ -8,7 +8,12 @@ import {
   Chip,
   Container,
   Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  LinearProgress,
   IconButton,
+  Button,
   Snackbar,
   Stack,
   Tab,
@@ -29,6 +34,7 @@ import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
 import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
+import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
 
 import { getAppTheme } from './theme';
 import { parseWhatsAppChat } from './parser/whatsappParser';
@@ -61,6 +67,22 @@ import { GeneratedPages } from './components/GeneratedPages/GeneratedPages';
 import { ChatStatistics } from './components/ChatStatistics/ChatStatistics';
 
 type EditorTab = 'customize' | 'preview' | 'export';
+
+interface FullPdfProgress {
+  completedMessages: number;
+  totalMessages: number;
+  completedPages: number;
+  estimatedRemainingMs: number | null;
+  stage: 'rendering' | 'building';
+}
+
+function formatDuration(milliseconds: number): string {
+  const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  if (seconds < 60) return `${seconds} sec`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return remainingSeconds ? `${minutes} min ${remainingSeconds} sec` : `${minutes} min`;
+}
 
 function buildParticipants(parsed: { participants: string[]; messages: ChatMessage[] }): Participant[] {
   return parsed.participants.map((name, i) => {
@@ -121,6 +143,10 @@ export default function App() {
   const [generatedPages, setGeneratedPages] = useState<GeneratedPage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBuildingPdf, setIsBuildingPdf] = useState(false);
+  const [isGeneratingFullPdf, setIsGeneratingFullPdf] = useState(false);
+  const [fullPdfProgress, setFullPdfProgress] = useState<FullPdfProgress | null>(null);
+  const [fullPdfBlob, setFullPdfBlob] = useState<Blob | null>(null);
+  const [fullPdfError, setFullPdfError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [previewPageId, setPreviewPageId] = useState<string | null>(null);
   const [tab, setTab] = useState<EditorTab>('customize');
@@ -349,6 +375,102 @@ export default function App() {
       setIsBuildingPdf(false);
     }
   }, [generatedPages, pdfSettings, fileMeta]);
+
+  const handleGenerateFullPdf = useCallback(async () => {
+    if (generationBatches.length === 0 || totalMessageCount === 0) return;
+
+    const startedAt = Date.now();
+    let completedMessages = 0;
+    let completedPages = 0;
+    let pdfWorker: Worker | null = null;
+    setGeneratedPages([]);
+    setFullPdfBlob(null);
+    setFullPdfError(null);
+    setFullPdfProgress({
+      completedMessages: 0,
+      totalMessages: totalMessageCount,
+      completedPages: 0,
+      estimatedRemainingMs: null,
+      stage: 'rendering',
+    });
+    setIsGeneratingFullPdf(true);
+
+    try {
+      pdfWorker = new Worker(new URL('./pdf/pdf.worker.ts', import.meta.url), { type: 'module' });
+      await new Promise<void>((resolve, reject) => {
+        pdfWorker!.onmessage = (event: MessageEvent<{ type: string; message?: string }>) => {
+          if (event.data.type === 'ready') resolve();
+          else if (event.data.type === 'error') reject(new Error(event.data.message));
+        };
+        pdfWorker!.onerror = (event) => reject(new Error(event.message || 'PDF worker failed.'));
+        pdfWorker!.postMessage({ type: 'init', settings: pdfSettings });
+      });
+
+      for (const batch of generationBatches) {
+        for (const group of batch.groups) {
+          const pages = await paginateGroupByHeight(group, participants, settings);
+          for (const page of pages) {
+            const rendered = await renderPageToDataUrl(page, participants, settings);
+            await new Promise<void>((resolve, reject) => {
+              pdfWorker!.onmessage = (event: MessageEvent<{ type: string; message?: string }>) => {
+                if (event.data.type === 'page-added') resolve();
+                else if (event.data.type === 'error') reject(new Error(event.data.message));
+              };
+              pdfWorker!.postMessage({
+                type: 'add-page',
+                dataUrl: rendered.dataUrl,
+                pixelWidth: rendered.pixelWidth,
+                pixelHeight: rendered.pixelHeight,
+              });
+            });
+            completedMessages += page.messages.length;
+            completedPages += 1;
+            const elapsedMs = Date.now() - startedAt;
+            const estimatedRemainingMs =
+              completedMessages > 0
+                ? (elapsedMs / completedMessages) * Math.max(0, totalMessageCount - completedMessages)
+                : null;
+            setFullPdfProgress({
+              completedMessages,
+              totalMessages: totalMessageCount,
+              completedPages,
+              estimatedRemainingMs,
+              stage: 'rendering',
+            });
+          }
+        }
+      }
+
+      setFullPdfProgress((progress) => (progress ? { ...progress, stage: 'building' } : progress));
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        pdfWorker!.onmessage = (event: MessageEvent<{ type: string; blob?: Blob; message?: string }>) => {
+          if (event.data.type === 'done' && event.data.blob) resolve(event.data.blob);
+          else if (event.data.type === 'error') reject(new Error(event.data.message));
+        };
+        pdfWorker!.postMessage({ type: 'finalize' });
+      });
+      setFullPdfBlob(blob);
+    } catch (err) {
+      setFullPdfError(err instanceof Error ? err.message : 'Failed to generate the complete PDF.');
+    } finally {
+      pdfWorker?.terminate();
+      setIsGeneratingFullPdf(false);
+    }
+  }, [generationBatches, totalMessageCount, participants, settings, pdfSettings]);
+
+  const handleDownloadFullPdf = useCallback(() => {
+    if (!fullPdfBlob) return;
+    downloadBlob(fullPdfBlob, `${slugifyFilename(fileMeta?.name.replace(/\.txt$/i, '') ?? 'chat')}.pdf`);
+    setFullPdfBlob(null);
+    setFullPdfProgress(null);
+  }, [fullPdfBlob, fileMeta]);
+
+  const closeFullPdfDialog = useCallback(() => {
+    if (isGeneratingFullPdf) return;
+    setFullPdfBlob(null);
+    setFullPdfProgress(null);
+    setFullPdfError(null);
+  }, [isGeneratingFullPdf]);
 
   const previewMessages = useMemo(() => {
     if (!parseResult) return [];
@@ -637,10 +759,12 @@ export default function App() {
                     minDate={parseResult?.firstDate ?? null}
                     maxDate={parseResult?.lastDate ?? null}
                     isGenerating={isGenerating}
+                    isGeneratingFullPdf={isGeneratingFullPdf}
                     onSplitChange={(patch) => updateSettings({ split: { ...settings.split, ...patch } })}
                     onOutputChange={(patch) => updateSettings({ output: { ...settings.output, ...patch } })}
                     onPdfChange={(patch) => setPdfSettings((prev) => ({ ...prev, ...patch }))}
                     onGenerateImages={handleGenerateImages}
+                    onGenerateFullPdf={handleGenerateFullPdf}
                     onSelectBatch={setSelectedBatch}
                   />
                   <GeneratedPages
@@ -671,6 +795,67 @@ export default function App() {
         </IconButton>
         {previewPage?.dataUrl && (
           <Box component="img" src={previewPage.dataUrl} alt="Generated page preview" sx={{ width: '100%', display: 'block' }} />
+        )}
+      </Dialog>
+
+      <Dialog
+        open={isGeneratingFullPdf || !!fullPdfBlob || !!fullPdfError}
+        onClose={closeFullPdfDialog}
+        disableEscapeKeyDown={isGeneratingFullPdf}
+        maxWidth="xs"
+        fullWidth
+      >
+        {isGeneratingFullPdf && fullPdfProgress ? (
+          <>
+            <DialogTitle>Generating complete PDF</DialogTitle>
+            <DialogContent>
+              <Stack spacing={2} sx={{ pt: 1 }}>
+                <LinearProgress
+                  variant="determinate"
+                  value={
+                    fullPdfProgress.stage === 'building'
+                      ? 100
+                      : (fullPdfProgress.completedMessages / fullPdfProgress.totalMessages) * 100
+                  }
+                />
+                <Typography variant="body2">
+                  {fullPdfProgress.stage === 'building'
+                    ? 'Preparing your PDF…'
+                    : `Processed ${fullPdfProgress.completedMessages.toLocaleString()} of ${fullPdfProgress.totalMessages.toLocaleString()} messages`}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {fullPdfProgress.completedPages.toLocaleString()} pages added
+                  {fullPdfProgress.stage === 'rendering' &&
+                    ` · ${fullPdfProgress.estimatedRemainingMs === null ? 'Estimating time…' : `About ${formatDuration(fullPdfProgress.estimatedRemainingMs)} remaining`}`}
+                </Typography>
+              </Stack>
+            </DialogContent>
+          </>
+        ) : fullPdfBlob ? (
+          <>
+            <DialogTitle>PDF ready to download</DialogTitle>
+            <DialogContent>
+              <Typography variant="body2" color="text.secondary">
+                Your complete chat PDF is ready ({fullPdfProgress?.completedPages.toLocaleString()} pages).
+              </Typography>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={closeFullPdfDialog}>Close</Button>
+              <Button variant="contained" startIcon={<PictureAsPdfRoundedIcon />} onClick={handleDownloadFullPdf}>
+                Download PDF
+              </Button>
+            </DialogActions>
+          </>
+        ) : (
+          <>
+            <DialogTitle>PDF generation failed</DialogTitle>
+            <DialogContent>
+              <Typography variant="body2" color="error">{fullPdfError}</Typography>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={closeFullPdfDialog}>Close</Button>
+            </DialogActions>
+          </>
         )}
       </Dialog>
 
