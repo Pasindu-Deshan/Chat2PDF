@@ -33,7 +33,7 @@ import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
 import { getAppTheme } from './theme';
 import { parseWhatsAppChat } from './parser/whatsappParser';
 import type { ParserWorkerResponse } from './parser/parser.worker';
-import type { ChatMessage, ChatPageGroup, GeneratedPage } from './types/chat';
+import type { ChatMessage, ChatPageGroup, GeneratedPage, ParseResult } from './types/chat';
 import type { Participant } from './types/participant';
 import type { ChatSettings, PdfSettings, SettingsPreset } from './types/settings';
 import {
@@ -47,6 +47,7 @@ import { autoTextColor } from './utils/contrastUtils';
 import { downloadDataUrl, downloadBlob } from './utils/fileUtils';
 import { slugifyFilename } from './utils/formatUtils';
 import { buildDateGroups } from './utils/splitUtils';
+import { buildGenerationBatches } from './utils/batchUtils';
 import { paginateGroupByHeight, renderPageToDataUrl, mapWithConcurrency } from './pdf/imageGenerator';
 import { buildPdf } from './pdf/pdfGenerator';
 
@@ -115,6 +116,7 @@ export default function App() {
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [parseProgress, setParseProgress] = useState<number | null>(null);
+  const [selectedBatch, setSelectedBatch] = useState(0);
 
   const [generatedPages, setGeneratedPages] = useState<GeneratedPage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -135,12 +137,6 @@ export default function App() {
     setParseProgress(0);
     setGeneratedPages([]);
 
-    // Large exports (tens of MB, hundreds of thousands of lines) take real
-    // CPU time to parse. Running that on the main thread is what causes the
-    // browser's "page unresponsive" warning, so we hand the whole file
-    // straight to a Web Worker (as a File — the worker reads its bytes
-    // itself, so we never copy 30MB of text between threads) and keep the
-    // UI interactive and reporting progress while it works.
     let worker: Worker | null = null;
 
     try {
@@ -149,13 +145,24 @@ export default function App() {
       });
       worker = activeWorker;
 
-      const result = await new Promise<ReturnType<typeof parseWhatsAppChat>>((resolve, reject) => {
+      const batches: ParseResult[] = [];
+      const result = await new Promise<ParseResult>((resolve, reject) => {
         activeWorker.onmessage = (event: MessageEvent<ParserWorkerResponse>) => {
           const msg = event.data;
           if (msg.type === 'progress') {
             setParseProgress(msg.total > 0 ? Math.min(99, Math.round((msg.processed / msg.total) * 100)) : null);
+          } else if (msg.type === 'batch') {
+            batches.push(msg.result);
           } else if (msg.type === 'done') {
-            resolve(msg.result);
+            resolve({
+              messages: batches.flatMap((batch) => batch.messages),
+              warnings: batches.flatMap((batch) => batch.warnings),
+              participants: msg.summary.participants,
+              firstDate: msg.summary.firstDate,
+              lastDate: msg.summary.lastDate,
+              totalLines: msg.summary.totalLines,
+              matchedLines: msg.summary.matchedLines,
+            });
           } else if (msg.type === 'error') {
             reject(new Error(msg.message));
           }
@@ -173,6 +180,7 @@ export default function App() {
 
       setFileMeta({ name: file.name, size: file.size });
       setParseResult(result);
+      setSelectedBatch(0);
       const newParticipants = buildParticipants(result);
       setParticipants(newParticipants);
       setSettings((prev) => ({
@@ -212,17 +220,33 @@ export default function App() {
     [dateGroups]
   );
 
+  const generationBatches = useMemo(() => buildGenerationBatches(dateGroups), [dateGroups]);
+  const activeBatchIndex = Math.min(selectedBatch, Math.max(0, generationBatches.length - 1));
+  const canExportPdf = useMemo(
+    () =>
+      generationBatches.length > 0 &&
+      generationBatches.every((batch) =>
+        batch.groups.every((group) => {
+          const pages = generatedPages.filter(
+            (page) => page.group.id === group.id || page.group.id.startsWith(`${group.id}-p`)
+          );
+          return pages.length > 0 && pages.every((page) => page.status === 'done');
+        })
+      ),
+    [generationBatches, generatedPages]
+  );
+
   const handleGenerateImages = useCallback(async () => {
-    if (!parseResult || dateGroups.length === 0) return;
+    const batch = generationBatches[activeBatchIndex];
+    if (!batch || batch.groups.length === 0) return;
     setIsGenerating(true);
-    setGeneratedPages([]);
 
     try {
       // Pagination for every date-group is independent, so this is safe to
       // run concurrently too — the DOM measurement work is the same cost
       // per group either way, but not serializing it end-to-end matters
       // once there are dozens of groups (e.g. "every day" over a year).
-      const paginatedGroups = await mapWithConcurrency(dateGroups, 3, (group) =>
+      const paginatedGroups = await mapWithConcurrency(batch.groups, 1, (group) =>
         paginateGroupByHeight(group, participants, settings)
       );
       const allPaginated: ChatPageGroup[] = paginatedGroups.flat();
@@ -233,13 +257,14 @@ export default function App() {
         dataUrl: null,
         status: 'pending',
       }));
-      setGeneratedPages(initialPages);
+      setGeneratedPages((prev) => [
+        ...prev.filter((page) => !allPaginated.some((group) => group.id === page.group.id)),
+        ...initialPages,
+      ]);
 
       // Rendering each page is independent, layout/canvas-heavy work, so a
-      // small amount of concurrency speeds up multi-page exports
-      // meaningfully without the memory spike of rendering everything at
-      // once. 3 in flight is a reasonable default across devices.
-      await mapWithConcurrency(allPaginated, 3, async (group) => {
+      // Keep only two captures in flight to avoid a large canvas-memory spike.
+      await mapWithConcurrency(allPaginated, 2, async (group) => {
         setGeneratedPages((prev) =>
           prev.map((p) => (p.id === group.id ? { ...p, status: 'rendering' } : p))
         );
@@ -263,12 +288,12 @@ export default function App() {
         }
       });
 
-      setToast(`Generated ${allPaginated.length} page(s).`);
+      setToast(`Generated batch ${activeBatchIndex + 1} of ${generationBatches.length}: ${allPaginated.length} page(s).`);
       if (isMobile) setTab('export');
     } finally {
       setIsGenerating(false);
     }
-  }, [parseResult, dateGroups, participants, settings, isMobile]);
+  }, [generationBatches, activeBatchIndex, participants, settings, isMobile]);
 
   const handleRegeneratePage = useCallback(
     async (id: string) => {
@@ -327,7 +352,7 @@ export default function App() {
 
   const previewMessages = useMemo(() => {
     if (!parseResult) return [];
-    return dateGroups.length > 0 ? dateGroups[0].messages : parseResult.messages.slice(0, 40);
+    return (dateGroups.length > 0 ? dateGroups[0].messages : parseResult.messages).slice(0, 40);
   }, [parseResult, dateGroups]);
 
   const previewPage = generatedPages.find((p) => p.id === previewPageId) ?? null;
@@ -423,6 +448,7 @@ export default function App() {
                       setParseResult(null);
                       setParticipants([]);
                       setGeneratedPages([]);
+                      setSelectedBatch(0);
                     }}
                   >
                     <RestartAltRoundedIcon fontSize="small" />
@@ -606,6 +632,8 @@ export default function App() {
                     pdf={pdfSettings}
                     pageCount={dateGroups.length}
                     messageCount={totalMessageCount}
+                    batches={generationBatches}
+                    selectedBatch={activeBatchIndex}
                     minDate={parseResult?.firstDate ?? null}
                     maxDate={parseResult?.lastDate ?? null}
                     isGenerating={isGenerating}
@@ -613,6 +641,7 @@ export default function App() {
                     onOutputChange={(patch) => updateSettings({ output: { ...settings.output, ...patch } })}
                     onPdfChange={(patch) => setPdfSettings((prev) => ({ ...prev, ...patch }))}
                     onGenerateImages={handleGenerateImages}
+                    onSelectBatch={setSelectedBatch}
                   />
                   <GeneratedPages
                     pages={generatedPages}
@@ -623,6 +652,7 @@ export default function App() {
                     onDownloadAllPng={handleDownloadAllPng}
                     onDownloadPdf={handleDownloadPdf}
                     isBuildingPdf={isBuildingPdf}
+                    canExportPdf={canExportPdf}
                   />
                 </Box>
               </Box>

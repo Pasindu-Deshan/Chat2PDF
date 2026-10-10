@@ -28,12 +28,12 @@ export function FileUploader({
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
-      if (!files || files.length === 0) return;
+      if (isParsing || !files || files.length === 0) return;
       const file = files[0];
       if (!file.name.toLowerCase().endsWith('.txt')) return;
       onFileSelected(file);
     },
-    [onFileSelected]
+    [isParsing, onFileSelected]
   );
 
   return (
@@ -74,6 +74,7 @@ export function FileUploader({
         type="file"
         accept=".txt,text/plain"
         hidden
+        disabled={isParsing}
         onChange={(e) => handleFiles(e.target.files)}
       />
       <Stack spacing={1.5} alignItems="center">
@@ -115,7 +116,7 @@ export function FileUploader({
               value={progress ?? undefined}
             />
             <Typography variant="caption" color="text.secondary">
-              {progress !== null ? `Parsing your chat… ${progress}%` : 'Parsing your chat…'}
+              {progress !== null ? `Reading and batching your chat… ${progress}%` : 'Reading and batching your chat…'}
             </Typography>
           </Box>
         )}

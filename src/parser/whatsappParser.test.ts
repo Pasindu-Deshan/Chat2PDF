@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { parseWhatsAppChat } from './whatsappParser';
+import { isWhatsAppMessageStart, parseWhatsAppChat } from './whatsappParser';
 
 describe('parseWhatsAppChat', () => {
+  it('recognizes valid message headers as safe batch boundaries', () => {
+    expect(isWhatsAppMessageStart('10/09/2019, 16:04 - Alex: Hello')).toBe(true);
+    expect(isWhatsAppMessageStart('[10/09/2019, 4:04:32 PM] Alex: Hello')).toBe(true);
+    expect(isWhatsAppMessageStart('continued message text')).toBe(false);
+    expect(isWhatsAppMessageStart('31/99/2019, 16:04 - Alex: Invalid date')).toBe(false);
+  });
+
   it('parses a basic message', () => {
     const result = parseWhatsAppChat('10/09/2019, 16:04 - Deshan: Hello');
     expect(result.messages).toHaveLength(1);

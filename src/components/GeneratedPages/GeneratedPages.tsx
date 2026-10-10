@@ -26,6 +26,7 @@ interface GeneratedPagesProps {
   onDownloadAllPng: () => void;
   onDownloadPdf: () => void;
   isBuildingPdf: boolean;
+  canExportPdf: boolean;
 }
 
 export function GeneratedPages({
@@ -37,6 +38,7 @@ export function GeneratedPages({
   onDownloadAllPng,
   onDownloadPdf,
   isBuildingPdf,
+  canExportPdf,
 }: GeneratedPagesProps) {
   if (pages.length === 0) return null;
 
@@ -61,7 +63,7 @@ export function GeneratedPages({
             size="small"
             startIcon={isBuildingPdf ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdfRoundedIcon />}
             onClick={onDownloadPdf}
-            disabled={!allDone || isBuildingPdf}
+            disabled={!allDone || !canExportPdf || isBuildingPdf}
           >
             {isBuildingPdf ? 'Building PDF…' : 'Generate PDF'}
           </Button>

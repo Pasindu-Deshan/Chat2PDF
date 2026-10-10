@@ -56,6 +56,11 @@ function matchHeader(line: string): HeaderMatch | null {
   return null;
 }
 
+export function isWhatsAppMessageStart(line: string): boolean {
+  const header = matchHeader(stripInvisible(line));
+  return !!header && !!parseWhatsAppDate(header.dateRaw) && !!parseWhatsAppTime(header.timeRaw);
+}
+
 /**
  * Splits "rest" (everything after "date, time - ") into a sender + message
  * if it looks like "Sender: message", or returns null (meaning: this is a

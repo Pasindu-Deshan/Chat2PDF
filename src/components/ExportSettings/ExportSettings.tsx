@@ -24,6 +24,8 @@ interface ExportSettingsProps {
   pdf: PdfSettings;
   pageCount: number;
   messageCount: number;
+  batches: Array<{ messageCount: number }>;
+  selectedBatch: number;
   minDate: string | null;
   maxDate: string | null;
   isGenerating: boolean;
@@ -31,6 +33,7 @@ interface ExportSettingsProps {
   onOutputChange: (patch: Partial<ChatSettings['output']>) => void;
   onPdfChange: (patch: Partial<PdfSettings>) => void;
   onGenerateImages: () => void;
+  onSelectBatch: (index: number) => void;
 }
 
 const SPLIT_OPTIONS: Array<{ value: SplitMode; label: string }> = [
@@ -48,6 +51,8 @@ export function ExportSettings({
   pdf,
   pageCount,
   messageCount,
+  batches,
+  selectedBatch,
   minDate,
   maxDate,
   isGenerating,
@@ -55,6 +60,7 @@ export function ExportSettings({
   onOutputChange,
   onPdfChange,
   onGenerateImages,
+  onSelectBatch,
 }: ExportSettingsProps) {
   return (
     <Stack spacing={3}>
@@ -124,6 +130,29 @@ export function ExportSettings({
           {messageCount} messages · {pageCount} {pageCount === 1 ? 'image' : 'images'} will be generated
         </Typography>
       </Box>
+
+      {batches.length > 0 && (
+        <Box>
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            Generation batch
+          </Typography>
+          <FormControl size="small" fullWidth>
+            <InputLabel id="generation-batch-label">Batch</InputLabel>
+            <Select
+              labelId="generation-batch-label"
+              label="Batch"
+              value={selectedBatch}
+              onChange={(event) => onSelectBatch(Number(event.target.value))}
+            >
+              {batches.map((batch, index) => (
+                <MenuItem key={index} value={index}>
+                  Batch {index + 1} of {batches.length} · {batch.messageCount.toLocaleString()} messages
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+      )}
 
       <Box>
         <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -272,7 +301,7 @@ export function ExportSettings({
         onClick={onGenerateImages}
         disabled={isGenerating || messageCount === 0}
       >
-        {isGenerating ? 'Generating…' : 'Generate images'}
+        {isGenerating ? 'Generating…' : `Generate batch ${batches.length ? selectedBatch + 1 : ''}`}
       </Button>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
         <PictureAsPdfRoundedIcon fontSize="inherit" />
