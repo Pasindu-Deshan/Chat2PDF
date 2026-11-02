@@ -5,6 +5,7 @@ import {
   AccordionSummary,
   AppBar,
   Box,
+  ButtonBase,
   Chip,
   Container,
   Dialog,
@@ -150,11 +151,41 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [previewPageId, setPreviewPageId] = useState<string | null>(null);
   const [tab, setTab] = useState<EditorTab>('customize');
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
 
   const previewRef = useRef<HTMLDivElement>(null);
 
   const updateSettings = useCallback((patch: Partial<ChatSettings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  const resetToStart = useCallback(() => {
+    setFileMeta(null);
+    setParseResult(null);
+    setParticipants([]);
+    setGeneratedPages([]);
+    setSelectedBatch(0);
+    setSettings({
+      ...DEFAULT_SETTINGS,
+      output: { ...DEFAULT_SETTINGS.output },
+      typography: { ...DEFAULT_SETTINGS.typography },
+      bubble: { ...DEFAULT_SETTINGS.bubble },
+    });
+    setPdfSettings({
+      pageSize: 'image',
+      orientation: 'portrait',
+      marginPx: 0,
+      customWidthMm: 100,
+      customHeightMm: 150,
+    });
+    setPreviewPageId(null);
+    setFullPdfBlob(null);
+    setFullPdfProgress(null);
+    setFullPdfError(null);
+    setParseError(null);
+    setToast(null);
+    setTab('customize');
+    setIsResetDialogOpen(false);
   }, []);
 
   const handleFileSelected = useCallback(async (file: File) => {
@@ -487,10 +518,17 @@ export default function App() {
       <CssBaseline />
       <AppBar position="sticky" color="default" elevation={0} sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
         <Toolbar sx={{ gap: 1 }}>
-          <ChatRoundedIcon color="primary" />
-          <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 800 }}>
-            Chat2PDF
-          </Typography>
+          <ButtonBase
+            aria-label="Return to Chat2PDF start page"
+            disabled={!hasChat}
+            onClick={() => setIsResetDialogOpen(true)}
+            sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 'auto', borderRadius: 1, px: 0.5 }}
+          >
+            <ChatRoundedIcon color="primary" />
+            <Typography variant="h6" sx={{ fontWeight: 800 }}>
+              Chat2PDF
+            </Typography>
+          </ButtonBase>
           <Chip
             icon={<LockRoundedIcon fontSize="small" />}
             label="Runs locally in your browser"
@@ -558,6 +596,22 @@ export default function App() {
                   height: { md: 'calc(100vh - 64px)' },
                   minHeight: 0,
                   bgcolor: 'background.paper',
+                  backgroundImage:
+                    themeMode === 'light'
+                      ? 'linear-gradient(155deg, rgba(11, 110, 99, 0.055), transparent 42%)'
+                      : 'linear-gradient(155deg, rgba(61, 220, 196, 0.07), transparent 42%)',
+                  scrollbarWidth: 'thin',
+                  scrollbarColor:
+                    themeMode === 'light' ? 'rgba(11, 110, 99, 0.38) transparent' : 'rgba(61, 220, 196, 0.42) transparent',
+                  '&::-webkit-scrollbar': { width: 8 },
+                  '&::-webkit-scrollbar-track': { bgcolor: 'transparent' },
+                  '&::-webkit-scrollbar-thumb': {
+                    bgcolor: themeMode === 'light' ? 'rgba(11, 110, 99, 0.32)' : 'rgba(61, 220, 196, 0.38)',
+                    borderRadius: 8,
+                    border: '2px solid transparent',
+                    backgroundClip: 'padding-box',
+                  },
+                  '&::-webkit-scrollbar-thumb:hover': { bgcolor: 'primary.main' },
                 }}
               >
                 <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2, pt: 2 }}>
@@ -735,11 +789,20 @@ export default function App() {
                 {parseResult && (
                   <Box sx={{ width: 420, maxWidth: '100%' }}>
                     <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-                      <Typography variant="subtitle2">Chat preview</Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 800, color: 'text.primary' }}>
+                        Chat preview
+                      </Typography>
                       <Chip
                         size="small"
-                        variant="outlined"
+                        variant="filled"
                         label={`${previewMessages.length} of ${previewTotalMessages} messages`}
+                        sx={{
+                          bgcolor: themeMode === 'light' ? 'rgba(11, 110, 99, 0.12)' : 'rgba(61, 220, 196, 0.16)',
+                          color: 'primary.main',
+                          border: '1px solid',
+                          borderColor: 'primary.main',
+                          '& .MuiChip-label': { fontWeight: 700 },
+                        }}
                       />
                     </Stack>
                     <Box sx={{ maxWidth: '100%' }}>
@@ -749,7 +812,7 @@ export default function App() {
                         participants={participants}
                         settings={settings}
                         width={420}
-                        messageAreaMaxHeight={360}
+                        messageAreaMaxHeight={520}
                       />
                     </Box>
                   </Box>
@@ -802,6 +865,28 @@ export default function App() {
           </Box>
         </>
       )}
+
+      <Dialog
+        open={isResetDialogOpen}
+        onClose={() => setIsResetDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Return to the first page?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This will remove the current chat, all customization edits, and generated pages. This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button autoFocus onClick={() => setIsResetDialogOpen(false)}>
+            Cancel
+          </Button>
+          <Button variant="contained" color="error" onClick={resetToStart}>
+            Discard edits and continue
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={!!previewPage} onClose={() => setPreviewPageId(null)} maxWidth="sm">
         <IconButton
