@@ -67,7 +67,22 @@ export function ExportSettings({
   onSelectBatch,
 }: ExportSettingsProps) {
   return (
-    <Stack spacing={3}>
+    <Box>
+      <Typography variant="h6" sx={{ mb: 3 }}>
+        Export settings
+      </Typography>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: 'minmax(0, 1fr)',
+            md: 'repeat(2, minmax(0, 1fr))',
+            xl: 'repeat(4, minmax(0, 1fr))',
+          },
+          gap: { xs: 2, md: 3 },
+          alignItems: 'start',
+        }}
+      >
       <Box>
         <Typography variant="subtitle2" sx={{ mb: 1 }}>
           Split messages by
@@ -298,28 +313,33 @@ export function ExportSettings({
         />
       </Box>
 
-      <Button
-        variant="contained"
-        size="large"
-        startIcon={<AutoAwesomeMotionRoundedIcon />}
-        onClick={onGenerateImages}
-        disabled={isGenerating || messageCount === 0}
-      >
-        {isGenerating ? 'Generating…' : `Generate batch ${batches.length ? selectedBatch + 1 : ''}`}
-      </Button>
-      <Button
-        variant="outlined"
-        size="large"
-        startIcon={<PictureAsPdfRoundedIcon />}
-        onClick={onGenerateFullPdf}
-        disabled={isGenerating || isGeneratingFullPdf || messageCount === 0}
-      >
-        Generate complete PDF
-      </Button>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <PictureAsPdfRoundedIcon fontSize="inherit" />
-        Generate a single PDF directly, or create and manage screenshot batches above.
-      </Typography>
-    </Stack>
+        <Box sx={{ gridColumn: { xs: '1', md: '1 / -1' } }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }} flexWrap="wrap">
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={<AutoAwesomeMotionRoundedIcon />}
+              onClick={onGenerateImages}
+              disabled={isGenerating || messageCount === 0}
+            >
+              {isGenerating ? 'Generating…' : `Generate batch ${batches.length ? selectedBatch + 1 : ''}`}
+            </Button>
+            <Button
+              variant="outlined"
+              size="large"
+              startIcon={<PictureAsPdfRoundedIcon />}
+              onClick={onGenerateFullPdf}
+              disabled={isGenerating || isGeneratingFullPdf || messageCount === 0}
+            >
+              Generate complete PDF
+            </Button>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <PictureAsPdfRoundedIcon fontSize="inherit" />
+              Generate a single PDF directly, or create and manage screenshot batches above.
+            </Typography>
+          </Stack>
+        </Box>
+      </Box>
+    </Box>
   );
 }

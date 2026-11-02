@@ -763,7 +763,7 @@ export default function App() {
                   p: { xs: 2, sm: 4 },
                 }}
               >
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '360px 1fr' }, gap: 4 }}>
+                <Stack spacing={4}>
                   <ExportSettings
                     split={settings.split}
                     output={settings.output}
@@ -794,7 +794,7 @@ export default function App() {
                     isBuildingPdf={isBuildingPdf}
                     canExportPdf={canExportPdf}
                   />
-                </Box>
+                </Stack>
               </Box>
             )}
           </Box>
