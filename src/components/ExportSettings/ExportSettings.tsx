@@ -333,11 +333,15 @@ export function ExportSettings({
             >
               Generate complete PDF
             </Button>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <PictureAsPdfRoundedIcon fontSize="inherit" />
-              Generate a single PDF directly, or create and manage screenshot batches above.
-            </Typography>
           </Stack>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 1 }}
+          >
+            <PictureAsPdfRoundedIcon fontSize="inherit" />
+            Generate a single PDF directly, or create and manage screenshot batches above.
+          </Typography>
         </Box>
       </Box>
     </Box>
