@@ -36,7 +36,7 @@ import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
 import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
 
-import { getAppTheme } from './theme';
+import { chatTextureForMode, getAppTheme } from './theme';
 import { parseWhatsAppChat } from './parser/whatsappParser';
 import type { ParserWorkerResponse } from './parser/parser.worker';
 import type { ChatMessage, ChatPageGroup, GeneratedPage, ParseResult } from './types/chat';
@@ -728,6 +728,8 @@ export default function App() {
                   alignItems: 'center',
                   minHeight: 0,
                   bgcolor: 'background.default',
+                  backgroundImage: chatTextureForMode(themeMode),
+                  backgroundSize: '180px 180px',
                 }}
               >
                 {parseResult && (
