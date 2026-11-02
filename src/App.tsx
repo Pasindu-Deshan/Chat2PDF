@@ -866,6 +866,57 @@ export default function App() {
         </>
       )}
 
+      <Box
+        component="footer"
+        sx={{
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
+        }}
+      >
+        <Box
+          sx={{
+            maxWidth: 1600,
+            mx: 'auto',
+            px: { xs: 2, sm: 4, lg: 6 },
+            py: 2.5,
+            display: 'flex',
+            flexDirection: { xs: 'column', sm: 'row' },
+            alignItems: { sm: 'center' },
+            justifyContent: 'space-between',
+            gap: 2,
+          }}
+        >
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 36,
+                height: 36,
+                flexShrink: 0,
+                borderRadius: 1,
+                display: 'grid',
+                placeItems: 'center',
+                bgcolor: 'action.hover',
+                color: 'primary.main',
+              }}
+            >
+              <LockRoundedIcon fontSize="small" />
+            </Box>
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                Private by design
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Your chat stays on this device. Parsing, preview, and PDF generation run locally in your browser; chat contents are never uploaded.
+              </Typography>
+            </Box>
+          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+            Only display preferences are saved in this browser.
+          </Typography>
+        </Box>
+      </Box>
+
       <Dialog
         open={isResetDialogOpen}
         onClose={() => setIsResetDialogOpen(false)}
