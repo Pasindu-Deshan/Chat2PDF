@@ -16,6 +16,8 @@ interface ChatPreviewProps {
   width: number;
   /** Fixed pixel height for capture; omit to let content size itself (live preview). */
   height?: number;
+  /** Optional scrollable message-area limit for the on-screen preview. */
+  messageAreaMaxHeight?: number;
   /** CSS scale factor applied purely for on-screen display, doesn't affect captured resolution. */
   displayScale?: number;
 }
@@ -35,7 +37,7 @@ function computeAutoTitle(participants: Participant[], rightId: string | null) {
 }
 
 export const ChatPreview = forwardRef<HTMLDivElement, ChatPreviewProps>(function ChatPreview(
-  { messages, participants, settings, width, height, displayScale },
+  { messages, participants, settings, width, height, displayScale, messageAreaMaxHeight },
   ref
 ) {
   const participantByName = useMemo(() => {
@@ -99,7 +101,16 @@ export const ChatPreview = forwardRef<HTMLDivElement, ChatPreviewProps>(function
             pointerEvents: 'none',
           }}
         />
-        <Box data-role="message-area" sx={{ position: 'relative', py: 1.5 }}>
+        <Box
+          data-role="message-area"
+          sx={{
+            position: 'relative',
+            py: 1.5,
+            maxHeight: messageAreaMaxHeight,
+            overflowY: messageAreaMaxHeight ? 'auto' : undefined,
+            scrollbarWidth: 'thin',
+          }}
+        >
           {messages.length === 0 && (
             <Box sx={{ textAlign: 'center', color: '#8b978f', pt: 6, fontSize: 13 }}>
               No messages in this range

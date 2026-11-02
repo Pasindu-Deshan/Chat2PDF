@@ -474,8 +474,9 @@ export default function App() {
 
   const previewMessages = useMemo(() => {
     if (!parseResult) return [];
-    return (dateGroups.length > 0 ? dateGroups[0].messages : parseResult.messages).slice(0, 40);
+    return (dateGroups.length > 0 ? dateGroups[0].messages : parseResult.messages).slice(0, 8);
   }, [parseResult, dateGroups]);
+  const previewTotalMessages = dateGroups[0]?.messages.length ?? parseResult?.messages.length ?? 0;
 
   const previewPage = generatedPages.find((p) => p.id === previewPageId) ?? null;
 
@@ -544,8 +545,7 @@ export default function App() {
           <Box
             sx={{
               display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: '360px 1fr' },
-              gridTemplateRows: { md: 'minmax(0, calc(100vh - 64px)) auto' },
+              gridTemplateColumns: { xs: '1fr', md: '360px minmax(0, 1fr)' },
               minHeight: 'calc(100vh - 64px)',
             }}
           >
@@ -555,6 +555,7 @@ export default function App() {
                   borderRight: { md: '1px solid' },
                   borderColor: 'divider',
                   overflowY: 'auto',
+                  height: { md: 'calc(100vh - 64px)' },
                   minHeight: 0,
                   bgcolor: 'background.paper',
                 }}
@@ -724,22 +725,29 @@ export default function App() {
                   p: { xs: 2, sm: 4 },
                   display: 'flex',
                   justifyContent: 'center',
-                  alignItems: 'flex-start',
+                  alignItems: 'center',
                   minHeight: 0,
+                  bgcolor: 'background.default',
                 }}
               >
                 {parseResult && (
-                  <Box sx={{ position: 'sticky', top: 16 }}>
-                    <Typography variant="overline" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 1 }}>
-                      Live preview
-                    </Typography>
-                    <Box sx={{ maxWidth: 420 }}>
+                  <Box sx={{ width: 420, maxWidth: '100%' }}>
+                    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+                      <Typography variant="subtitle2">Chat preview</Typography>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`${previewMessages.length} of ${previewTotalMessages} messages`}
+                      />
+                    </Stack>
+                    <Box sx={{ maxWidth: '100%' }}>
                       <ChatPreview
                         ref={previewRef}
                         messages={previewMessages}
                         participants={participants}
                         settings={settings}
                         width={420}
+                        messageAreaMaxHeight={360}
                       />
                     </Box>
                   </Box>
@@ -751,8 +759,7 @@ export default function App() {
               <Box
                 sx={{
                   gridColumn: { md: '1 / -1' },
-                  borderTop: { md: '1px solid' },
-                  borderColor: 'divider',
+                  mt: { md: 4 },
                   p: { xs: 2, sm: 4 },
                 }}
               >
