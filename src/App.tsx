@@ -545,6 +545,7 @@ export default function App() {
             sx={{
               display: 'grid',
               gridTemplateColumns: { xs: '1fr', md: '360px 1fr' },
+              gridTemplateRows: { md: 'minmax(0, calc(100vh - 64px)) auto' },
               minHeight: 'calc(100vh - 64px)',
             }}
           >
@@ -554,7 +555,7 @@ export default function App() {
                   borderRight: { md: '1px solid' },
                   borderColor: 'divider',
                   overflowY: 'auto',
-                  maxHeight: { md: 'calc(100vh - 64px)' },
+                  minHeight: 0,
                   bgcolor: 'background.paper',
                 }}
               >
@@ -718,7 +719,15 @@ export default function App() {
             )}
 
             {(!isMobile || tab === 'preview') && (
-              <Box sx={{ p: { xs: 2, sm: 4 }, display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+              <Box
+                sx={{
+                  p: { xs: 2, sm: 4 },
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'flex-start',
+                  minHeight: 0,
+                }}
+              >
                 {parseResult && (
                   <Box sx={{ position: 'sticky', top: 16 }}>
                     <Typography variant="overline" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 1 }}>
