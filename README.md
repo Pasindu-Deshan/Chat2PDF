@@ -1,16 +1,42 @@
 # Chat2PDF
 
-Turn exported WhatsApp chats into beautiful, screenshot-style PDFs — entirely in your browser. Nothing is ever uploaded to a server.
+Turn exported WhatsApp chats into screenshot-style images and PDFs. Parsing, editing, rendering, and export run locally in your browser; your chat is never uploaded.
+
+## Screenshots
+
+The screenshots use an original wizard-academy conversation in `docs/sample-chat.txt`.
+
+<table>
+   <tr>
+      <th>Upload</th>
+      <th>Customize</th>
+   </tr>
+   <tr>
+      <td><img src="docs/screenshots/upload.png" alt="Chat2PDF upload screen" width="400" /></td>
+      <td><img src="docs/screenshots/editor.png" alt="Participant and chat customization controls" width="400" /></td>
+   </tr>
+   <tr>
+      <th>Live preview</th>
+      <th>Export settings</th>
+   </tr>
+   <tr>
+      <td><img src="docs/screenshots/preview.png" alt="Scrollable chat preview with sample messages" width="400" /></td>
+      <td><img src="docs/screenshots/export.png" alt="Responsive image and PDF export settings" width="400" /></td>
+   </tr>
+</table>
 
 ## Features
 
-- 📄 Drag-and-drop upload of a WhatsApp `.txt` export
-- 🧠 Robust parser: multiline messages, system events, media placeholders, emoji/Unicode senders (including Sinhala/Tamil), both the Android (`date, time - Sender: text`) and iOS (`[date, time] Sender: text`) export formats
-- 🎨 Full visual customization: per-participant bubble/text colors (with automatic contrast-safe text color), fonts, bubble radius/spacing/width, chat header, and background (built-in patterns or your own image)
-- 📆 Flexible date splitting: no splitting, every N days, or a custom date range — with automatic sub-pagination so no image ever gets unreasonably tall (and no bubble is ever split in half)
-- 🖼️ High-resolution PNG export per page, plus a combined PDF export (image-size, A4, Letter, or custom paper, portrait/landscape)
-- 📊 Chat statistics panel (message counts, date range, most active participant, etc.)
-- 🔒 Privacy-first: parsing, rendering, and PDF generation all happen client-side; nothing about your chat ever leaves your device
+- Drag-and-drop upload of WhatsApp `.txt` exports in Android and iOS formats
+- Web Worker parsing with progress feedback for large files, multiline messages, system events, media placeholders, and Unicode names
+- Participant alignment and color controls, chat header, background, typography, and message styling
+- Live preview of a short chat sample, with a bounded scroll area that stays independent of export settings
+- Light and dark themes; the preview has its own theme-aware chat-bubble texture
+- Flexible date splitting, custom ranges, and automatic height-based pagination
+- Generated page management with preview, delete, regenerate, and individual or batch image downloads
+- High-resolution PNG output and combined PDFs with image-size, A4, Letter, or custom page settings
+- A logo confirmation flow for returning to the upload page and discarding the current chat, edits, and generated pages
+- Client-side processing: chat contents never leave the device
 
 ## Getting started
 
@@ -20,6 +46,18 @@ npm run dev
 ```
 
 Then open the printed local URL (typically `http://localhost:5173`).
+
+## Editing and exporting
+
+1. Upload a WhatsApp `.txt` export.
+2. Use the Customize panel to set participant alignment and colors, the chat header, background, and message typography. Presets are available at the top of the panel.
+3. Check the live preview. It shows a limited sample and scrolls independently so it does not push the export section down the page.
+4. In Export settings, choose how messages are split, image dimensions and quality, and PDF page settings.
+5. Generate screenshot batches or a complete PDF. Review generated pages before downloading or rebuilding them.
+
+Clicking the Chat2PDF logo while editing opens a confirmation. Confirming returns to upload and resets the current chat, customization settings, and generated output; cancelling keeps the session intact. On smaller screens, Preview, Customize, and Export are available as tabs.
+
+The editor and export areas use solid theme surfaces. The chat-bubble texture is limited to the preview canvas and adapts to light and dark mode.
 
 ### Build for production
 
@@ -34,16 +72,16 @@ npm run preview
 npm test
 ```
 
-## Trying it out
+## Sample conversation
 
-A sample chat you can paste into a `.txt` file to try the app:
+Try the app with this original wizard-academy conversation: [`docs/sample-chat.txt`](docs/sample-chat.txt).
 
 ```text
-10/09/2019, 15:54 - Emma: Hi
-10/09/2019, 16:04 - Harry: Where are you?
-10/09/2019, 16:04 - Emma: I'm heading to home
-10/09/2019, 16:04 - Emma: Where're you now?
-10/09/2019, 16:04 - Harry: On the train
+18/04/2025, 08:04 - Mira Vale: The observatory chart is humming again.
+18/04/2025, 08:06 - Theo Moss: Maybe it knows the comet is early.
+18/04/2025, 08:08 - Mira Vale: Comets do not read timetables.
+18/04/2025, 08:10 - Juniper Reed: This one left a silver trail over the greenhouse.
+18/04/2025, 08:12 - Theo Moss: I found the trail in the west stairwell.
 ```
 
 ## How it works
@@ -55,7 +93,7 @@ A sample chat you can paste into a `.txt` file to try the app:
 WhatsApp parser (src/parser)
    │  → ChatMessage[] + detected participants
    ▼
-Chat settings (colors, fonts, background, header…)
+Chat settings (participants, colors, fonts, background, header…)
    ▼
 Date-based splitting (src/utils/splitUtils.ts)
    │  → one group per day / N days / custom range
@@ -69,16 +107,19 @@ High-res capture (html-to-image) → PNG per page
 PDF assembly (src/pdf/pdfGenerator.ts, jsPDF) → downloadable PDF
 ```
 
-Everything above runs in the browser's main thread using the DOM, React, and Canvas — there is no backend and no network request involving your chat's contents.
+Everything above runs in the browser. Parsing uses a Web Worker; rendering uses the DOM and Canvas. There is no backend or network request involving your chat contents.
 
 ## Project structure
 
 ```text
+docs/
+├── sample-chat.txt      # Original sample conversation for trying the app
+└── screenshots/         # README screenshots of the app workflow
 src/
 ├── components/         # Presentational + composed UI (chat renderer, settings panels, export UI)
 ├── parser/              # WhatsApp .txt parser + date utilities (fully unit-tested)
 ├── pdf/                 # Off-screen rendering, height pagination, and PDF assembly
-├── state/               # Default settings, presets, and context scaffolding
+├── state/               # Default settings, presets, and persisted UI preferences
 ├── types/               # Shared TypeScript types (chat, participant, settings)
 ├── utils/               # Color/contrast, file, formatting, and date-splitting helpers
 ├── App.tsx              # Application shell: upload flow + editor layout
@@ -99,9 +140,15 @@ Two things were tuned specifically for large chats and fast exports:
 
 If you're still working with genuinely enormous chats (multi-hundred-thousand messages), the remaining cost is inherent: every page still has to go through a real browser layout + canvas capture, and that's fundamentally proportional to how many pages you're generating. Splitting into smaller date ranges via "Custom date range" before generating is the most effective way to keep any single generation run fast.
 
-## Notes & known trade-offs
+## Privacy and preferences
+
+- Chat text is processed locally and is never written to `localStorage`.
+- Theme and selected visual/output preferences are persisted in `localStorage` for convenience.
+- Returning to the first page from the editor clears the loaded chat, customizations, and generated pages after confirmation.
+
+## Notes and trade-offs
 
 - **Built-in backgrounds** are generated with plain CSS gradients rather than shipping any WhatsApp-owned artwork, so the app has zero external/binary asset dependencies.
 - **Height-based pagination** works by rendering candidate pages off-screen and measuring their real height, then binary-searching for the largest number of messages that still fit — this is correctness-first rather than the fastest possible approach; very large chats (tens of thousands of messages) will take some time to paginate since each candidate is a real DOM measurement.
 - **"Download all images"** triggers sequential browser downloads (staggered to avoid the browser blocking them) rather than zipping them, to avoid adding a zip dependency; the PDF export is the recommended way to get everything in one file.
-- **UI preferences** (theme, output size, font, bubble style) are persisted to `localStorage` for convenience. The chat text you upload is **never** written to `localStorage` or any other persistent storage.
+- **UI preferences** (theme, output size, font, bubble style) are persisted to `localStorage` for convenience. Uploaded chat text is never persisted.
